@@ -2,6 +2,8 @@
  * DetectionResults – displays Roboflow API detection results
  */
 
+import BoundingBoxOverlay from "./BoundingBoxOverlay";
+
 interface Detection {
   x: number;
   y: number;
@@ -51,7 +53,12 @@ export default function DetectionResults({ result, imageUrl, onReset }: Props) {
               </button>
             </div>
             {imageUrl && (
-              <img src={imageUrl} alt="Analyzed" className="w-full h-auto" />
+              <BoundingBoxOverlay
+                imageUrl={imageUrl}
+                predictions={result.predictions}
+                imageWidth={result.image.width}
+                imageHeight={result.image.height}
+              />
             )}
           </div>
         </div>

@@ -25,8 +25,14 @@
 - [ ] Update color palette (realistic, not AI aesthetic)
 - [ ] Update typography and layout
 - [ ] Update hero section with realistic imagery
-- [ ] Add About and Contact pages
+- [ ] Add About page
+- [x] Add Contact page with team members
 - [ ] Add settings panel (gear icon)
+
+## Current Fixes
+- [x] Add bounding boxes overlay from Roboflow predictions
+- [x] Rename site to NaveEye
+- [x] Add Contact page
 
 ## Phase 5: Testing & Delivery
 - [ ] Test all input methods
