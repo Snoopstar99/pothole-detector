@@ -16,6 +16,8 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import DetectionResults from "@/components/DetectionResults";
 import InputMethods from "@/components/InputMethods";
+import LiveStream from "@/components/LiveStream";
+import WebRTCStream from "@/components/WebRTCStream";
 
 type InputMode = "idle" | "browse" | "camera" | "live-stream" | "webrtc";
 
@@ -140,6 +142,10 @@ export default function Home() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const handleAnalyzeFrame = useCallback(async (base64: string) => {
+    return analyzeMutation.mutateAsync({ imageBase64: base64 });
+  }, [analyzeMutation]);
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
@@ -173,7 +179,17 @@ export default function Home() {
 
       <main className="container py-12">
         {/* Results display or input methods */}
-        {detectionResult && imageUrl && !isAnalyzing ? (
+        {inputMode === "live-stream" ? (
+          <LiveStream 
+            onClose={() => setInputMode("idle")} 
+            onAnalyze={handleAnalyzeFrame} 
+          />
+        ) : inputMode === "webrtc" ? (
+          <WebRTCStream 
+            onClose={() => setInputMode("idle")} 
+            onAnalyze={handleAnalyzeFrame} 
+          />
+        ) : detectionResult && imageUrl && !isAnalyzing ? (
           <DetectionResults
             result={detectionResult}
             imageUrl={imageUrl}

@@ -107,33 +107,31 @@ export default function InputMethods({
         {/* Live Stream */}
         <button
           onClick={onLiveStream}
-          disabled
-          className="glass-card rounded-xl p-8 text-center opacity-50 cursor-not-allowed"
+          className="glass-card rounded-xl p-8 text-center hover:border-primary/60 transition-all hover:bg-primary/5"
         >
-          <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-muted/10 border border-muted/30 flex items-center justify-center">
-            <svg className="w-8 h-8 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-center">
+            <svg className="w-8 h-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                 d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
           </div>
           <h3 className="font-bold text-lg mb-2">Live Stream</h3>
-          <p className="text-sm text-muted-foreground">Coming soon</p>
+          <p className="text-sm text-muted-foreground">Real-time camera analysis</p>
         </button>
 
         {/* WebRTC Stream */}
         <button
           onClick={onWebRTC}
-          disabled
-          className="glass-card rounded-xl p-8 text-center opacity-50 cursor-not-allowed"
+          className="glass-card rounded-xl p-8 text-center hover:border-primary/60 transition-all hover:bg-primary/5"
         >
-          <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-muted/10 border border-muted/30 flex items-center justify-center">
-            <svg className="w-8 h-8 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-center">
+            <svg className="w-8 h-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                 d="M9 19V6a2 2 0 012-2h4a2 2 0 012 2v13a2 2 0 01-2 2h-4a2 2 0 01-2-2zm0 0V5a2 2 0 012-2h4a2 2 0 012 2v14a2 2 0 01-2 2h-4a2 2 0 01-2-2z" />
             </svg>
           </div>
           <h3 className="font-bold text-lg mb-2">WebRTC Stream</h3>
-          <p className="text-sm text-muted-foreground">Coming soon</p>
+          <p className="text-sm text-muted-foreground">Analyze remote video feeds</p>
         </button>
       </div>
     </div>
