@@ -5,8 +5,8 @@ import { publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import axios from "axios";
 
-const ROBOFLOW_API_KEY = "cB3ypDmTTMqeecqXbRfs";
-const ROBOFLOW_MODEL = "pothole-detection-iwfu9/3";
+const ROBOFLOW_API_KEY = "IhL1Lhrl5Qra3XJDkFYD";
+const ROBOFLOW_MODEL = "pothole-detection-lwf9u/3";
 const ROBOFLOW_URL = `https://detect.roboflow.com/${ROBOFLOW_MODEL}`;
 
 export const appRouter = router({
