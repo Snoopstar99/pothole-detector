@@ -38,6 +38,7 @@ export default function Home() {
   const [inputMode, setInputMode] = useState<InputMode>("idle");
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageBase64, setImageBase64] = useState<string>("");
   const [detectionResult, setDetectionResult] = useState<DetectionResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -84,6 +85,7 @@ export default function Home() {
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = (reader.result as string).split(",")[1];
+      setImageBase64(base64);
       console.log("Sending image to backend for analysis...");
       analyzeMutation.mutate({ imageBase64: base64 });
     };
@@ -175,6 +177,7 @@ export default function Home() {
           <DetectionResults
             result={detectionResult}
             imageUrl={imageUrl}
+            imageBase64={imageBase64}
             onReset={handleReset}
           />
         ) : (

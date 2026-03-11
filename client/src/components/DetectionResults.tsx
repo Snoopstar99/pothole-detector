@@ -1,7 +1,11 @@
 /**
- * DetectionResults – displays Roboflow API detection results
+ * DetectionResults – displays Roboflow API detection results with email reporting
  */
 
+import { useState } from "react";
+import { toast } from "sonner";
+import { trpc } from "@/lib/trpc";
+import { useLocation } from "@/hooks/useLocation";
 import BoundingBoxOverlay from "./BoundingBoxOverlay";
 
 interface Detection {
@@ -22,9 +26,24 @@ interface Props {
   result: Result;
   imageUrl: string | null;
   onReset: () => void;
+  imageBase64: string;
 }
 
-export default function DetectionResults({ result, imageUrl, onReset }: Props) {
+export default function DetectionResults({ result, imageUrl, onReset, imageBase64 }: Props) {
+  const [isSending, setIsSending] = useState(false);
+  const { location, isLoading: isLocationLoading, getLocation } = useLocation();
+  
+  const sendReportMutation = trpc.detection.sendReport.useMutation({
+    onSuccess: () => {
+      setIsSending(false);
+      toast.success("Report sent to authorities!");
+    },
+    onError: (error) => {
+      setIsSending(false);
+      toast.error("Failed to send report: " + error.message);
+    },
+  });
+
   const totalDetections = result.predictions.length;
   const avgConfidence =
     totalDetections > 0
@@ -35,6 +54,29 @@ export default function DetectionResults({ result, imageUrl, onReset }: Props) {
     if (conf >= 0.8) return { label: "HIGH", color: "text-red-400", bg: "bg-red-400/10" };
     if (conf >= 0.6) return { label: "MED", color: "text-amber-400", bg: "bg-amber-400/10" };
     return { label: "LOW", color: "text-green-400", bg: "bg-green-400/10" };
+  };
+
+  const handleSendToAuthorities = async () => {
+    if (!location) {
+      setIsSending(true);
+      await getLocation();
+      setIsSending(false);
+      return;
+    }
+
+    setIsSending(true);
+    const avgConfidenceNum = totalDetections > 0
+      ? result.predictions.reduce((s, p) => s + p.confidence, 0) / totalDetections
+      : 0;
+
+    sendReportMutation.mutate({
+      potholeCount: totalDetections,
+      averageConfidence: avgConfidenceNum,
+      latitude: location.latitude,
+      longitude: location.longitude,
+      address: location.address,
+      imageBase64,
+    });
   };
 
   return (
@@ -133,6 +175,38 @@ export default function DetectionResults({ result, imageUrl, onReset }: Props) {
               </>
             )}
           </div>
+
+          {/* Send to Authorities button */}
+          <button
+            onClick={handleSendToAuthorities}
+            disabled={isSending || isLocationLoading}
+            className="w-full py-3 rounded-xl bg-red-500 text-white font-semibold hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {isSending || isLocationLoading ? (
+              <>
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {isLocationLoading ? "Getting Location..." : "Sending..."}
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                📧 Send to Authorities
+              </>
+            )}
+          </button>
+
+          {/* Location info */}
+          {location && (
+            <div className="glass-card rounded-xl p-4 text-xs">
+              <p className="text-muted-foreground mb-2">📍 Location Detected</p>
+              <p className="font-mono text-xs">{location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}</p>
+              {location.address && <p className="text-muted-foreground mt-1">{location.address}</p>}
+            </div>
+          )}
 
           {/* New analysis button */}
           <button
