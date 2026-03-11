@@ -26,11 +26,11 @@ export default function BoundingBoxOverlay({
   imageWidth,
   imageHeight,
 }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const imageRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
-    if (!canvasRef.current || !imageRef.current || !imageUrl) return;
+    if (!canvasRef.current || !imageUrl) return;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
@@ -38,6 +38,7 @@ export default function BoundingBoxOverlay({
 
     const img = new Image();
     img.crossOrigin = "anonymous";
+    
     img.onload = () => {
       // Set canvas size to match image
       canvas.width = img.width;
@@ -57,11 +58,11 @@ export default function BoundingBoxOverlay({
         if (severity === "high") color = "#ef4444"; // red
         if (severity === "medium") color = "#f59e0b"; // amber
 
-        // Calculate box coordinates
+        // Calculate box coordinates (Roboflow returns center x, y with width, height)
         const left = pred.x - pred.width / 2;
         const top = pred.y - pred.height / 2;
 
-        // Draw box
+        // Draw main box
         ctx.strokeStyle = color;
         ctx.lineWidth = 3;
         ctx.strokeRect(left, top, pred.width, pred.height);
@@ -69,27 +70,33 @@ export default function BoundingBoxOverlay({
         // Draw corner accents
         const cornerSize = 15;
         ctx.fillStyle = color;
-        // Top-left
+        
+        // Top-left corner
         ctx.fillRect(left, top, cornerSize, 3);
         ctx.fillRect(left, top, 3, cornerSize);
-        // Top-right
+        
+        // Top-right corner
         ctx.fillRect(left + pred.width - cornerSize, top, cornerSize, 3);
         ctx.fillRect(left + pred.width - 3, top, 3, cornerSize);
-        // Bottom-left
+        
+        // Bottom-left corner
         ctx.fillRect(left, top + pred.height - 3, cornerSize, 3);
         ctx.fillRect(left, top + pred.height - cornerSize, 3, cornerSize);
-        // Bottom-right
+        
+        // Bottom-right corner
         ctx.fillRect(left + pred.width - cornerSize, top + pred.height - 3, cornerSize, 3);
         ctx.fillRect(left + pred.width - 3, top + pred.height - cornerSize, 3, cornerSize);
 
-        // Draw label
+        // Draw label background
         const label = `${pred.class} ${confidence}%`;
         const fontSize = 14;
         ctx.font = `bold ${fontSize}px Arial`;
-        ctx.fillStyle = color;
-        const textWidth = ctx.measureText(label).width;
+        const textMetrics = ctx.measureText(label);
+        const textWidth = textMetrics.width;
         const textPadding = 8;
 
+        // Label background
+        ctx.fillStyle = color;
         ctx.fillRect(
           left,
           top - fontSize - textPadding * 2,
@@ -97,20 +104,25 @@ export default function BoundingBoxOverlay({
           fontSize + textPadding * 2
         );
 
+        // Label text
         ctx.fillStyle = "#000";
         ctx.fillText(label, left + textPadding, top - textPadding);
       });
+    };
+
+    img.onerror = () => {
+      console.error("Failed to load image for bounding box overlay");
     };
 
     img.src = imageUrl;
   }, [imageUrl, predictions]);
 
   return (
-    <div className="relative w-full">
+    <div ref={containerRef} className="relative w-full bg-black rounded-lg overflow-hidden">
       <canvas
         ref={canvasRef}
-        className="w-full h-auto bg-black rounded-lg"
-        style={{ maxHeight: "600px", objectFit: "contain" }}
+        className="w-full h-auto"
+        style={{ maxHeight: "600px", display: "block" }}
       />
     </div>
   );

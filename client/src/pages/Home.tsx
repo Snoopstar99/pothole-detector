@@ -19,11 +19,26 @@ import InputMethods from "@/components/InputMethods";
 
 type InputMode = "idle" | "browse" | "camera" | "live-stream" | "webrtc";
 
+interface Detection {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  class: string;
+  confidence: number;
+}
+
+interface DetectionResult {
+  predictions: Detection[];
+  image: { width: number; height: number };
+}
+
 export default function Home() {
   const { user } = useAuth();
   const [inputMode, setInputMode] = useState<InputMode>("idle");
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [detectionResult, setDetectionResult] = useState<DetectionResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -32,11 +47,14 @@ export default function Home() {
   // tRPC mutation for analyzing image
   const analyzeMutation = trpc.detection.analyze.useMutation({
     onSuccess: (data) => {
+      console.log("Detection successful:", data);
+      setDetectionResult(data);
       setIsAnalyzing(false);
       toast.success(`Detected ${data.predictions.length} pothole(s)!`);
     },
     onError: (error) => {
       setIsAnalyzing(false);
+      console.error("Detection error:", error);
       toast.error("Analysis failed: " + error.message);
     },
   });
@@ -60,11 +78,13 @@ export default function Home() {
     setImageUrl(url);
     setInputMode("browse");
     setIsAnalyzing(true);
+    setDetectionResult(null);
 
     // Convert file to base64 and send to backend
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = (reader.result as string).split(",")[1];
+      console.log("Sending image to backend for analysis...");
       analyzeMutation.mutate({ imageBase64: base64 });
     };
     reader.readAsDataURL(file);
@@ -92,8 +112,14 @@ export default function Home() {
     canvasRef.current.height = videoRef.current.videoHeight;
     ctx.drawImage(videoRef.current, 0, 0);
 
-    const base64 = canvasRef.current.toDataURL("image/jpeg").split(",")[1];
+    const imageDataUrl = canvasRef.current.toDataURL("image/jpeg");
+    const base64 = imageDataUrl.split(",")[1];
+    
+    setImageUrl(imageDataUrl);
     setIsAnalyzing(true);
+    setDetectionResult(null);
+    
+    console.log("Capturing photo and sending to backend...");
     analyzeMutation.mutate({ imageBase64: base64 });
 
     // Stop camera stream
@@ -107,6 +133,7 @@ export default function Home() {
     setSelectedImage(null);
     if (imageUrl) URL.revokeObjectURL(imageUrl);
     setImageUrl(null);
+    setDetectionResult(null);
     setIsAnalyzing(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
@@ -144,9 +171,9 @@ export default function Home() {
 
       <main className="container py-12">
         {/* Results display or input methods */}
-        {analyzeMutation.data && !isAnalyzing ? (
+        {detectionResult && imageUrl && !isAnalyzing ? (
           <DetectionResults
-            result={analyzeMutation.data}
+            result={detectionResult}
             imageUrl={imageUrl}
             onReset={handleReset}
           />
