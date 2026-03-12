@@ -2,11 +2,11 @@
  * DetectionResults – displays Roboflow API detection results with email reporting
  */
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
-import { useLocation } from "@/hooks/useLocation";
 import BoundingBoxOverlay from "./BoundingBoxOverlay";
+import type { LocationData } from "@/hooks/useLocation";
 
 interface Detection {
   x: number;
@@ -27,11 +27,20 @@ interface Props {
   imageUrl: string | null;
   onReset: () => void;
   imageBase64: string;
+  capturedLocation: LocationData | null;
 }
 
-export default function DetectionResults({ result, imageUrl, onReset, imageBase64 }: Props) {
+export default function DetectionResults({ result, imageUrl, onReset, imageBase64, capturedLocation }: Props) {
   const [isSending, setIsSending] = useState(false);
-  const { location, isLoading: isLocationLoading, getLocation } = useLocation();
+  const [imageWithBoxes, setImageWithBoxes] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  
+  const handleCanvasReady = (canvas: HTMLCanvasElement) => {
+    canvasRef.current = canvas;
+    // Get the image data URL with bounding boxes
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+    setImageWithBoxes(dataUrl.split(",")[1] || null);
+  };
   
   const sendReportMutation = trpc.detection.sendReport.useMutation({
     onSuccess: () => {
@@ -57,10 +66,11 @@ export default function DetectionResults({ result, imageUrl, onReset, imageBase6
   };
 
   const handleSendToAuthorities = async () => {
-    if (!location) {
-      setIsSending(true);
-      await getLocation();
-      setIsSending(false);
+    // Use captured location from when image was uploaded
+    const locationToUse = capturedLocation;
+    
+    if (!locationToUse) {
+      toast.error("Location not available. Please allow location access and try again.");
       return;
     }
 
@@ -72,10 +82,11 @@ export default function DetectionResults({ result, imageUrl, onReset, imageBase6
     sendReportMutation.mutate({
       potholeCount: totalDetections,
       averageConfidence: avgConfidenceNum,
-      latitude: location.latitude,
-      longitude: location.longitude,
-      address: location.address,
-      imageBase64,
+      latitude: locationToUse.latitude,
+      longitude: locationToUse.longitude,
+      address: locationToUse.address,
+      // Use image with bounding boxes if available, otherwise use original
+      imageBase64: imageWithBoxes || imageBase64,
     });
   };
 
@@ -100,6 +111,7 @@ export default function DetectionResults({ result, imageUrl, onReset, imageBase6
                 predictions={result.predictions}
                 imageWidth={result.image.width}
                 imageHeight={result.image.height}
+                onCanvasReady={handleCanvasReady}
               />
             )}
           </div>
@@ -179,15 +191,15 @@ export default function DetectionResults({ result, imageUrl, onReset, imageBase6
           {/* Send to Authorities button */}
           <button
             onClick={handleSendToAuthorities}
-            disabled={isSending || isLocationLoading}
+            disabled={isSending}
             className="w-full py-3 rounded-xl bg-red-500 text-white font-semibold hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            {isSending || isLocationLoading ? (
+            {isSending ? (
               <>
                 <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                {isLocationLoading ? "Getting Location..." : "Sending..."}
+                Sending...
               </>
             ) : (
               <>
@@ -200,11 +212,11 @@ export default function DetectionResults({ result, imageUrl, onReset, imageBase6
           </button>
 
           {/* Location info */}
-          {location && (
+          {capturedLocation && (
             <div className="glass-card rounded-xl p-4 text-xs">
               <p className="text-muted-foreground mb-2">📍 Location Detected</p>
-              <p className="font-mono text-xs">{location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}</p>
-              {location.address && <p className="text-muted-foreground mt-1">{location.address}</p>}
+              <p className="font-mono text-xs">{capturedLocation.latitude.toFixed(6)}, {capturedLocation.longitude.toFixed(6)}</p>
+              {capturedLocation.address && <p className="text-muted-foreground mt-1">{capturedLocation.address}</p>}
             </div>
           )}
 

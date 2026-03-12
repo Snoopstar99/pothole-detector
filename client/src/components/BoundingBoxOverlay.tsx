@@ -18,6 +18,7 @@ interface Props {
   predictions: Detection[];
   imageWidth: number;
   imageHeight: number;
+  onCanvasReady?: (canvas: HTMLCanvasElement) => void;
 }
 
 export default function BoundingBoxOverlay({
@@ -25,6 +26,7 @@ export default function BoundingBoxOverlay({
   predictions,
   imageWidth,
   imageHeight,
+  onCanvasReady,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -107,6 +109,11 @@ export default function BoundingBoxOverlay({
         // Label text
         ctx.fillStyle = "#000";
         ctx.fillText(label, left + textPadding, top - textPadding);
+        
+        // Notify parent that canvas is ready with bounding boxes
+        if (onCanvasReady) {
+          onCanvasReady(canvas);
+        }
       });
     };
 

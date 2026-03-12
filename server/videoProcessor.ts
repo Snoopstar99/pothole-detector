@@ -2,6 +2,7 @@ import ffmpeg from "fluent-ffmpeg";
 import { promises as fs } from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
+import os from "os";
 
 /**
  * Extract frames from video file at specified intervals
@@ -15,55 +16,80 @@ export async function extractVideoFrames(
   } = {}
 ): Promise<string[]> {
   const { fps = 1, maxFrames = 100 } = options;
+  const tempDir = path.join(os.tmpdir(), `video-frames-${nanoid()}`);
 
   return new Promise((resolve, reject) => {
-    const tempDir = path.join("/tmp", `video-frames-${nanoid()}`);
     const frames: string[] = [];
 
-    ffmpeg(videoPath)
-      .on("filenames", (filenames: string[]) => {
-        console.log(`[Video] Extracting ${filenames.length} frames from video`);
-      })
-      .on("end", async () => {
-        try {
-          // Read extracted frames and convert to base64
-          const files = await fs.readdir(tempDir);
-          const sortedFiles = files
-            .filter((f) => f.endsWith(".png"))
-            .sort((a, b) => {
-              const numA = parseInt(a.match(/\d+/)?.[0] || "0");
-              const numB = parseInt(b.match(/\d+/)?.[0] || "0");
-              return numA - numB;
-            })
-            .slice(0, maxFrames);
+    // Create temp directory first
+    fs.mkdir(tempDir, { recursive: true }).catch(() => {});
 
-          for (const file of sortedFiles) {
-            const filePath = path.join(tempDir, file);
-            const data = await fs.readFile(filePath);
-            frames.push(data.toString("base64"));
+    // First get video duration to calculate timestamps properly
+    ffmpeg.ffprobe(videoPath, (err: Error | null, metadata: any) => {
+      if (err) {
+        console.error("[Video] FFprobe error:", err);
+        reject(err);
+        return;
+      }
+      
+      const duration = metadata.format.duration || 10;
+      const numFrames = Math.min(maxFrames, Math.floor(duration * fps));
+      
+      // Generate timestamps at regular intervals
+      const timestamps: string[] = [];
+      for (let i = 0; i < numFrames; i++) {
+        timestamps.push((i / fps).toFixed(2));
+      }
+
+      ffmpeg(videoPath)
+        .on("filenames", (filenames: string[]) => {
+          console.log(`[Video] Extracting ${filenames.length} frames from video`);
+        })
+        .on("end", async () => {
+          try {
+            // Read extracted frames and convert to base64
+            const files = await fs.readdir(tempDir);
+            const sortedFiles = files
+              .filter((f) => f.endsWith(".png"))
+              .sort((a, b) => {
+                const numA = parseInt(a.match(/\d+/)?.[0] || "0");
+                const numB = parseInt(b.match(/\d+/)?.[0] || "0");
+                return numA - numB;
+              })
+              .slice(0, maxFrames);
+
+            for (const file of sortedFiles) {
+              const filePath = path.join(tempDir, file);
+              const data = await fs.readFile(filePath);
+              frames.push(data.toString("base64"));
+            }
+
+            // Cleanup temp directory
+            try {
+              for (const file of sortedFiles) {
+                await fs.unlink(path.join(tempDir, file));
+              }
+              await fs.rmdir(tempDir);
+            } catch (e) {
+              // Ignore cleanup errors
+            }
+
+            resolve(frames);
+          } catch (error) {
+            reject(error);
           }
-
-          // Cleanup temp directory
-          for (const file of sortedFiles) {
-            await fs.unlink(path.join(tempDir, file));
-          }
-          await fs.rmdir(tempDir);
-
-          resolve(frames);
-        } catch (error) {
+        })
+        .on("error", (error: Error) => {
+          console.error("[Video] FFmpeg error:", error);
           reject(error);
-        }
-      })
-      .on("error", (error: Error) => {
-        console.error("[Video] FFmpeg error:", error);
-        reject(error);
-      })
-      .screenshots({
-        folder: tempDir,
-        filename: "frame-%i.png",
-        size: "1280x720",
-        timestamps: [`0%+${1 / fps}s`], // Extract at specified FPS
-      });
+        })
+        .screenshots({
+          folder: tempDir,
+          filename: "frame-%i.png",
+          size: "1280x720",
+          count: numFrames,
+        });
+    });
   });
 }
 
@@ -121,9 +147,9 @@ export async function streamVideoFrames(
 ): Promise<void> {
   const { fps = 2, timeout = 300 } = options;
   const frameInterval = 1000 / fps; // milliseconds between frames
+  const tempDir = path.join(os.tmpdir(), `stream-frames-${nanoid()}`);
 
   return new Promise((resolve, reject) => {
-    const tempDir = path.join("/tmp", `stream-frames-${nanoid()}`);
     let frameCount = 0;
     let isRunning = true;
 

@@ -1,13 +1,18 @@
 import nodemailer from "nodemailer";
 import { ENV } from "./_core/env";
 
-// Create Gmail transporter
+// Create Gmail transporter with timeout settings
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
     user: ENV.gmailUser,
     pass: ENV.gmailAppPassword,
   },
+  pool: true,
+  maxConnections: 1,
+  rateDelta: 2000,
+  rateLimit: 5,
+  timeout: 30000,
 });
 
 export interface EmailReportData {
@@ -25,6 +30,15 @@ export interface EmailReportData {
 }
 
 export async function sendDamageReport(data: EmailReportData): Promise<boolean> {
+  console.log("[Email] Starting to send report...", {
+    potholeCount: data.potholeCount,
+    severityLevel: data.severityLevel,
+    hasImage: !!data.imageBase64,
+    imageSize: data.imageBase64 ? Math.round(data.imageBase64.length / 1024) + "KB" : "0KB",
+  });
+  
+  const startTime = Date.now();
+  
   try {
     // Determine damage description based on severity
     const damageDescriptions: Record<string, string> = {
@@ -147,7 +161,7 @@ export async function sendDamageReport(data: EmailReportData): Promise<boolean> 
       ],
     });
 
-    console.log("Email sent successfully to:", ENV.authorityEmail);
+    console.log("Email sent successfully to:", ENV.authorityEmail, "in", Date.now() - startTime, "ms");
     return true;
   } catch (error) {
     console.error("Failed to send email:", error);

@@ -9,10 +9,63 @@ import { extractVideoFrames, getVideoMetadata } from "./videoProcessor";
 import { promises as fs } from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
+import os from "os";
 
 const ROBOFLOW_API_KEY = "IhL1Lhrl5Qra3XJDkFYD";
 const ROBOFLOW_MODEL = "pothole-detection-lwf9u/3";
 const ROBOFLOW_URL = `https://detect.roboflow.com/${ROBOFLOW_MODEL}`;
+const ROBOFLOW_VIDEO_URL = `https://detect.roboflow.com/${ROBOFLOW_MODEL}`;
+
+// Helper function for frame extraction method (fallback)
+async function analyzeVideoWithFrames(videoBase64: string, fps: number, maxFrames: number) {
+  const tempDir = os.tmpdir();
+  const tempFile = path.join(tempDir, `video-${nanoid()}.mp4`);
+  
+  try {
+    const videoBuffer = Buffer.from(videoBase64, "base64");
+    await fs.writeFile(tempFile, videoBuffer);
+
+    const metadata = await getVideoMetadata(tempFile);
+    console.log("[Video] Metadata:", metadata);
+
+    const frames = await extractVideoFrames(tempFile, { fps, maxFrames });
+    console.log(`[Video] Extracted ${frames.length} frames`);
+
+    const results = [];
+    for (let i = 0; i < frames.length; i++) {
+      try {
+        const response = await axios.post(ROBOFLOW_URL, frames[i], {
+          params: { api_key: ROBOFLOW_API_KEY },
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          timeout: 30000,
+        });
+
+        results.push({
+          frameNumber: i,
+          timestamp: (i / fps).toFixed(2),
+          predictions: response.data.predictions || [],
+          confidence: response.data.predictions?.length > 0
+            ? (response.data.predictions.reduce((sum: number, p: any) => sum + p.confidence, 0) / response.data.predictions.length).toFixed(2)
+            : 0,
+        });
+      } catch (error) {
+        console.error(`Failed to analyze frame ${i}:`, error);
+      }
+    }
+
+    return {
+      totalFrames: frames.length,
+      videoMetadata: metadata,
+      results,
+      summary: {
+        totalDetections: results.reduce((sum, r) => sum + (r.predictions?.length || 0), 0),
+        framesWithDetections: results.filter((r) => r.predictions?.length > 0).length,
+      },
+    };
+  } finally {
+    try { await fs.unlink(tempFile); } catch (e) { /* ignore */ }
+  }
+}
 
 export const appRouter = router({
   system: systemRouter,
@@ -102,65 +155,67 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input }) => {
-        const tempFile = path.join("/tmp", `video-${nanoid()}.mp4`);
         try {
+          console.log("[Video] Sending video to Roboflow for inference...");
+          
+          // Convert base64 to buffer
           const videoBuffer = Buffer.from(input.videoBase64, "base64");
-          await fs.writeFile(tempFile, videoBuffer);
-
-          const metadata = await getVideoMetadata(tempFile);
-          console.log("[Video] Metadata:", metadata);
-
-          const frames = await extractVideoFrames(tempFile, {
-            fps: input.fps,
-            maxFrames: input.maxFrames,
-          });
-
-          console.log(`[Video] Extracted ${frames.length} frames`);
-
-          const results = [];
-          for (let i = 0; i < frames.length; i++) {
-            try {
-              const response = await axios.post(ROBOFLOW_URL, frames[i], {
-                params: {
-                  api_key: ROBOFLOW_API_KEY,
-                },
-                headers: {
-                  "Content-Type": "application/x-www-form-urlencoded",
-                },
-                timeout: 30000,
-              });
-
-              results.push({
-                frameNumber: i,
-                timestamp: (i / input.fps).toFixed(2),
-                predictions: response.data.predictions,
-                confidence: response.data.predictions.length > 0
-                  ? (response.data.predictions.reduce((sum: number, p: any) => sum + p.confidence, 0) / response.data.predictions.length).toFixed(2)
-                  : 0,
-              });
-            } catch (error) {
-              console.error(`Failed to analyze frame ${i}:`, error);
+          
+          // Send video directly to Roboflow for inference
+          // Try different approaches
+          const formData = new FormData();
+          const blob = new Blob([videoBuffer], { type: "video/mp4" });
+          formData.append("file", blob, "video.mp4");
+          
+          // Try video inference API
+          const response = await axios.post(
+            `${ROBOFLOW_VIDEO_URL}?api_key=${ROBOFLOW_API_KEY}`,
+            formData,
+            {
+              headers: {
+                "Content-Type": "multipart/form-data",
+              },
+              timeout: 120000,
             }
-          }
-
+          );
+          
+          console.log("[Video] Roboflow response:", response.data);
+          
+          // Parse response
+          const roboflowData = response.data;
+          const predictions = roboflowData.predictions || roboflowData || [];
+          
+          // Handle different response formats
+          const results = Array.isArray(predictions) 
+            ? predictions.map((pred: any, idx: number) => ({
+                frameNumber: idx,
+                timestamp: pred.timestamp?.toString() || (idx / 1).toString(),
+                predictions: pred.detections || pred.predictions || [],
+                confidence: pred.detections?.length > 0 
+                  ? (pred.detections.reduce((sum: number, p: any) => sum + p.confidence, 0) / pred.detections.length).toFixed(2)
+                  : 0,
+              }))
+            : [];
+          
           return {
-            totalFrames: frames.length,
-            videoMetadata: metadata,
+            totalFrames: results.length,
+            videoMetadata: {
+              duration: roboflowData.video_info?.duration || 0,
+              width: roboflowData.video_info?.width || 0,
+              height: roboflowData.video_info?.height || 0,
+            },
             results,
             summary: {
-              totalDetections: results.reduce((sum, r) => sum + r.predictions.length, 0),
-              framesWithDetections: results.filter((r) => r.predictions.length > 0).length,
+              totalDetections: results.reduce((sum: number, r: any) => sum + (r.predictions?.length || 0), 0),
+              framesWithDetections: results.filter((r: any) => r.predictions?.length > 0).length,
             },
           };
-        } catch (error) {
-          console.error("Video analysis error:", error);
-          throw new Error("Failed to analyze video");
-        } finally {
-          try {
-            await fs.unlink(tempFile);
-          } catch (e) {
-            // Ignore cleanup errors
-          }
+        } catch (error: any) {
+          console.error("Roboflow video API error:", error.response?.data || error.message);
+          
+          // Fallback: Use frame extraction method
+          console.log("[Video] Falling back to frame extraction method...");
+          return analyzeVideoWithFrames(input.videoBase64, input.fps || 1, input.maxFrames || 30);
         }
       }),
   })

@@ -7,17 +7,17 @@ export default function Contact() {
     {
       name: "Steve Onsare",
       school: "Kapsabet High School",
-      email: "steveonsare001@gmail.com",
+      email: "wmatrix927@gmail.com",
     },
     {
       name: "Ryan Kipkoech",
       school: "Kapsabet High School",
-      email: "ryankemboi67@gmail.com",
+      email: "ryankipkoech400@gmail.com",
     },
     {
       name: "Alvan Baraka",
       school: "Kapsabet High School",
-      email: "alvanbaraka@gmail.com",
+      email: "snoopstar.xx99@gmail.com",
     },
   ];
 

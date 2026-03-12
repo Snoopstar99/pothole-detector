@@ -10,14 +10,16 @@
  * - Display Roboflow API results only (backend-driven inference)
  */
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import DetectionResults from "@/components/DetectionResults";
 import InputMethods from "@/components/InputMethods";
+import VideoResults from "@/components/VideoResults";
+import { useLocation, type LocationData } from "@/hooks/useLocation";
 
-type InputMode = "idle" | "browse" | "camera" | "live-stream" | "webrtc";
+type InputMode = "idle" | "browse" | "camera" | "live-stream" | "webrtc" | "video";
 
 interface Detection {
   x: number;
@@ -33,6 +35,21 @@ interface DetectionResult {
   image: { width: number; height: number };
 }
 
+interface VideoAnalysisResult {
+  totalFrames: number;
+  videoMetadata: { duration: number; width: number; height: number };
+  results: Array<{
+    frameNumber: number;
+    timestamp: string;
+    predictions: Detection[];
+    confidence: string | number;
+  }>;
+  summary: {
+    totalDetections: number;
+    framesWithDetections: number;
+  };
+}
+
 export default function Home() {
   const { user } = useAuth();
   const [inputMode, setInputMode] = useState<InputMode>("idle");
@@ -40,8 +57,12 @@ export default function Home() {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string>("");
   const [detectionResult, setDetectionResult] = useState<DetectionResult | null>(null);
+  const [videoResult, setVideoResult] = useState<VideoAnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [capturedLocation, setCapturedLocation] = useState<LocationData | null>(null);
+  const { location: currentLocation, getLocation } = useLocation();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -57,6 +78,21 @@ export default function Home() {
       setIsAnalyzing(false);
       console.error("Detection error:", error);
       toast.error("Analysis failed: " + error.message);
+    },
+  });
+
+  // tRPC mutation for analyzing video
+  const analyzeVideoMutation = trpc.detection.analyzeVideo.useMutation({
+    onSuccess: (data) => {
+      console.log("Video analysis successful:", data);
+      setVideoResult(data);
+      setIsAnalyzing(false);
+      toast.success(`Video analyzed! Found ${data.summary.totalDetections} detections in ${data.summary.framesWithDetections} frames.`);
+    },
+    onError: (error) => {
+      setIsAnalyzing(false);
+      console.error("Video analysis error:", error);
+      toast.error("Video analysis failed: " + error.message);
     },
   });
 
@@ -81,16 +117,99 @@ export default function Home() {
     setIsAnalyzing(true);
     setDetectionResult(null);
 
-    // Convert file to base64 and send to backend
+    // Convert file to base64 with compression
     const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = (reader.result as string).split(",")[1];
-      setImageBase64(base64);
-      console.log("Sending image to backend for analysis...");
-      analyzeMutation.mutate({ imageBase64: base64 });
+    reader.onload = async () => {
+      if (!reader.result) return;
+      
+      // Create an image to get dimensions
+      const img = new Image();
+      img.onload = () => {
+        // Resize image to max 800px width/height for smaller file size
+        const maxSize = 800;
+        let width = img.width;
+        let height = img.height;
+        
+        if (width > height && width > maxSize) {
+          height = (height * maxSize) / width;
+          width = maxSize;
+        } else if (height > maxSize) {
+          width = (width * maxSize) / height;
+          height = maxSize;
+        }
+        
+        // Create canvas to resize
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+        
+        // Get compressed base64 (quality 0.7)
+        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7).split(",")[1];
+        
+        console.log(`Image resized from ${Math.round(reader.result.toString().length / 1024)}KB to ${Math.round(compressedBase64.length / 1024)}KB`);
+        
+        setImageBase64(compressedBase64);
+        getLocation();
+        analyzeMutation.mutate({ imageBase64: compressedBase64 });
+      };
+      img.src = reader.result as string;
     };
     reader.readAsDataURL(file);
   }, [analyzeMutation]);
+
+  // Handle video file upload
+  const handleVideoUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("video/")) {
+      toast.error("Please select a video file (MP4, WEBM, etc.)");
+      return;
+    }
+
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error("Video must be smaller than 50MB");
+      return;
+    }
+
+    setInputMode("video");
+    setIsAnalyzing(true);
+    setDetectionResult(null);
+    setVideoResult(null);
+
+    // Get location when video is uploaded
+    getLocation();
+
+    // Convert video to base64 and send to backend
+    const reader = new FileReader();
+    reader.onload = async () => {
+      if (!reader.result) return;
+      const base64 = (reader.result as string).split(",")[1];
+      console.log("Sending video to backend for analysis...", Math.round(base64.length / 1024) + "KB");
+      analyzeVideoMutation.mutate({ 
+        videoBase64: base64,
+        fps: 1,
+        maxFrames: 30
+      });
+    };
+    reader.readAsDataURL(file);
+  }, [analyzeVideoMutation]);
+
+  // Handler for video button click
+  const handleVideoButtonClick = () => {
+    videoInputRef.current?.click();
+  };
+
+  // Stub handlers for unimplemented features
+  const handleLiveStream = () => {
+    toast.info("Live stream feature coming soon!");
+  };
+
+  const handleWebRTC = () => {
+    toast.info("WebRTC streaming coming soon!");
+  };
 
   const handleTakePhoto = useCallback(async () => {
     try {
@@ -110,18 +229,35 @@ export default function Home() {
     const ctx = canvasRef.current.getContext("2d");
     if (!ctx) return;
 
-    canvasRef.current.width = videoRef.current.videoWidth;
-    canvasRef.current.height = videoRef.current.videoHeight;
-    ctx.drawImage(videoRef.current, 0, 0);
+    // Resize image to max 800px width/height for smaller file size
+    const maxSize = 800;
+    let width = videoRef.current.videoWidth;
+    let height = videoRef.current.videoHeight;
+    
+    if (width > height && width > maxSize) {
+      height = (height * maxSize) / width;
+      width = maxSize;
+    } else if (height > maxSize) {
+      width = (width * maxSize) / height;
+      height = maxSize;
+    }
+    
+    canvasRef.current.width = width;
+    canvasRef.current.height = height;
+    ctx.drawImage(videoRef.current, 0, 0, width, height);
 
-    const imageDataUrl = canvasRef.current.toDataURL("image/jpeg");
+    // Get compressed base64 (quality 0.7)
+    const imageDataUrl = canvasRef.current.toDataURL("image/jpeg", 0.7);
     const base64 = imageDataUrl.split(",")[1];
     
     setImageUrl(imageDataUrl);
     setIsAnalyzing(true);
     setDetectionResult(null);
     
-    console.log("Capturing photo and sending to backend...");
+    // Get location when photo is captured
+    getLocation();
+    
+    console.log("Capturing photo and sending to backend...", Math.round(base64.length / 1024) + "KB");
     analyzeMutation.mutate({ imageBase64: base64 });
 
     // Stop camera stream
@@ -136,9 +272,19 @@ export default function Home() {
     if (imageUrl) URL.revokeObjectURL(imageUrl);
     setImageUrl(null);
     setDetectionResult(null);
+    setVideoResult(null);
     setIsAnalyzing(false);
+    setCapturedLocation(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (videoInputRef.current) videoInputRef.current.value = "";
   };
+
+  // Store location when it becomes available
+  useEffect(() => {
+    if (currentLocation && !capturedLocation) {
+      setCapturedLocation(currentLocation);
+    }
+  }, [currentLocation, capturedLocation]);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -179,6 +325,13 @@ export default function Home() {
             imageUrl={imageUrl}
             imageBase64={imageBase64}
             onReset={handleReset}
+            capturedLocation={capturedLocation}
+          />
+        ) : videoResult && !isAnalyzing ? (
+          <VideoResults
+            result={videoResult}
+            onReset={handleReset}
+            capturedLocation={capturedLocation}
           />
         ) : (
           <InputMethods
@@ -187,8 +340,10 @@ export default function Home() {
             onBrowse={() => fileInputRef.current?.click()}
             onTakePhoto={handleTakePhoto}
             onCapturePhoto={capturePhoto}
-            onLiveStream={() => setInputMode("live-stream")}
-            onWebRTC={() => setInputMode("webrtc")}
+            onVideoUpload={handleVideoButtonClick}
+            onRTSPStream={() => toast.info("RTSP stream coming soon!")}
+            onLiveStream={handleLiveStream}
+            onWebRTC={handleWebRTC}
             videoRef={videoRef as React.RefObject<HTMLVideoElement>}
           />
         )}
@@ -200,6 +355,13 @@ export default function Home() {
         type="file"
         accept="image/*"
         onChange={handleBrowseFile}
+        className="hidden"
+      />
+      <input
+        ref={videoInputRef}
+        type="file"
+        accept="video/*"
+        onChange={handleVideoUpload}
         className="hidden"
       />
       <canvas ref={canvasRef} className="hidden" />
